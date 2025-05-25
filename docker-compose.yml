@@ -1,0 +1,108 @@
+version: '3.8'
+
+services:
+  # Hexagonal Chain Development Node
+  hexnode-dev:
+    build: .
+    container_name: hexchain-dev
+    ports:
+      - "30303:30303"  # P2P network
+      - "8545:8545"    # HTTP RPC
+      - "8546:8546"    # WebSocket RPC
+    volumes:
+      - ./data/node1:/home/hexchain/data
+      - ./logs:/home/hexchain/logs
+    environment:
+      - HEXCHAIN_NETWORK_ID=1337
+      - HEXCHAIN_NODE_TYPE=validator
+      - HEXCHAIN_LOG_LEVEL=debug
+    networks:
+      - hexchain-network
+
+  # Additional nodes for testnet
+  hexnode-1:
+    build: .
+    container_name: hexchain-node-1
+    ports:
+      - "30304:30303"
+      - "8547:8545"
+      - "8548:8546"
+    volumes:
+      - ./data/node2:/home/hexchain/data
+    environment:
+      - HEXCHAIN_NETWORK_ID=1337
+      - HEXCHAIN_NODE_TYPE=validator
+      - HEXCHAIN_BOOTNODES=hexnode-dev:30303
+    networks:
+      - hexchain-network
+    depends_on:
+      - hexnode-dev
+
+  hexnode-2:
+    build: .
+    container_name: hexchain-node-2
+    ports:
+      - "30305:30303"
+      - "8549:8545"
+      - "8550:8546"
+    volumes:
+      - ./data/node3:/home/hexchain/data
+    environment:
+      - HEXCHAIN_NETWORK_ID=1337
+      - HEXCHAIN_NODE_TYPE=validator
+      - HEXCHAIN_BOOTNODES=hexnode-dev:30303
+    networks:
+      - hexchain-network
+    depends_on:
+      - hexnode-dev
+
+  # Database for hex-indexer
+  postgres:
+    image: postgres:15-alpine
+    container_name: hexchain-db
+    environment:
+      POSTGRES_DB: hexchain
+      POSTGRES_USER: hexchain
+      POSTGRES_PASSWORD: hexchain_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - hexchain-network
+
+  # Redis for caching
+  redis:
+    image: redis:7-alpine
+    container_name: hexchain-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - hexchain-network
+
+  # Hex-Indexer service
+  hex-indexer:
+    build:
+      context: .
+      dockerfile: Dockerfile.indexer
+    container_name: hexchain-indexer
+    environment:
+      - DATABASE_URL=postgresql://hexchain:hexchain_dev@postgres:5432/hexchain
+      - REDIS_URL=redis://redis:6379
+      - HEXCHAIN_RPC_URL=http://hexnode-dev:8545
+    networks:
+      - hexchain-network
+    depends_on:
+      - postgres
+      - redis
+      - hexnode-dev
+
+networks:
+  hexchain-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data: 
